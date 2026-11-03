@@ -1,0 +1,108 @@
+name: Voyager AI Reels Factory
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Pipeline mode (transcribe or render)"
+        required: true
+        default: "transcribe"
+      release_tag:
+        description: "GitHub Release tag holding media/spec"
+        required: true
+        default: "job-eMXvYXuCOPk"
+
+permissions:
+  contents: write
+
+jobs:
+  transcribe-chunks:
+    if: ${{ inputs.mode == 'transcribe' }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [0, 1, 2, 3, 4, 5]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install FFmpeg & Faster-Whisper
+        run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+          pip install -q faster-whisper
+
+      - name: Download audio & transcribe chunk ${{ matrix.chunk }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" -p "full_audio.m4a" -D /tmp
+          python3 scripts/transcribe_chunk.py "${{ matrix.chunk }}" 6 /tmp/full_audio.m4a "/tmp/chunk_${{ matrix.chunk }}.json"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: tx-chunk-${{ matrix.chunk }}
+          path: /tmp/chunk_${{ matrix.chunk }}.json
+
+  merge-transcript:
+    if: ${{ inputs.mode == 'transcribe' }}
+    needs: transcribe-chunks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: tx-chunk-*
+          path: /tmp/chunks
+          merge-multiple: true
+
+      - name: Merge & upload full_transcript.json to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python3 scripts/merge_transcripts.py "/tmp/chunks/chunk_*.json" /tmp/full_transcript.json
+          gh release upload "${{ inputs.release_tag }}" /tmp/full_transcript.json --clobber
+
+  render-reels:
+    if: ${{ inputs.mode == 'render' }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        reel_idx: [0, 1, 2]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache Voyager Engines & Models
+        id: cache-voyager
+        uses: actions/cache@v4
+        with:
+          path: ~/.local/share/voyager
+          key: voyager-engines-v2026.11.2.3-v1
+
+      - name: Install Arabic Fonts, FFmpeg & Voyager Native Engines
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fonts-noto-core fonts-noto-ui-core fonts-noto-color-emoji fontconfig
+          fc-cache -f
+          if [ ! -x "$HOME/.local/share/voyager/engines/bin/voyager-video" ]; then
+            mkdir -p /tmp/vp
+            REL="https://github.com/usevoyager/voyager-releases/releases/download/v2026.11.2.3"
+            curl -fsSL "$REL/voyager-pack-engine-video-0.1.37-76c7bb4d1cd0-p1-linux-x64.tar.gz" -o /tmp/vp/video.tar.gz
+            curl -fsSL "$REL/voyager-pack-engine-design-0.1.27-1b63390e1a9e-p1-linux-x64.tar.gz" -o /tmp/vp/design.tar.gz
+            curl -fsSL "$REL/voyager-pack-engine-daw-0.1.17-82052b1dd308-p1-linux-x64.tar.gz" -o /tmp/vp/daw.tar.gz
+            mkdir -p /tmp/vp/vid_extracted
+            tar -xzf /tmp/vp/video.tar.gz -C /tmp/vp/vid_extracted
+            /tmp/vp/vid_extracted/install.sh --daw /tmp/vp/daw.tar.gz --design /tmp/vp/design.tar.gz --models speech,vision
+            "$HOME/.local/share/voyager/engines/bin/voyager-video" engine install openh264
+            rm -rf /tmp/vp
+          fi
+          echo "$HOME/.local/share/voyager/engines/bin" >> $GITHUB_PATH
+
+      - name: Render Reel ${{ matrix.reel_idx }} & Upload to Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release download "${{ inputs.release_tag }}" -p "full_video_only.mp4" -p "full_audio.m4a" -p "reels_spec.json" -D /tmp
+          python3 scripts/render_reel.py "${{ matrix.reel_idx }}" /tmp/reels_spec.json /tmp/full_video_only.mp4 /tmp/full_audio.m4a /tmp/out
+          gh release upload "${{ inputs.release_tag }}" /tmp/out/* --clobber
