@@ -83,7 +83,7 @@ jobs:
       - name: Install Arabic Fonts, FFmpeg & Voyager Native Engines
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq ffmpeg fonts-noto-core fonts-noto-ui-core fonts-noto-color-emoji fontconfig
+          sudo apt-get install -y -qq ffmpeg mesa-vulkan-drivers libvulkan1 fonts-noto-core fonts-noto-extra fonts-noto-ui-core fonts-noto-color-emoji fonts-dejavu-core fontconfig
           fc-cache -f
           if [ ! -x "$HOME/.local/share/voyager/engines/bin/voyager-video" ]; then
             mkdir -p /tmp/vp

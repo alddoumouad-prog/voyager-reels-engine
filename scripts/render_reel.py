@@ -58,7 +58,7 @@ subprocess.check_call(["voyager-video", "new", proj, src_mkv])
 # 3. Seed transcript schema & inject exact word-timed Moroccan Darija / target captions
 subprocess.check_call([
     "voyager-video", "-C", proj, "media", "transcribe",
-    "--lang", reel.get("lang", "ar"), "--model", "tiny", "--no-verbatim"
+    "--model", "whisper-tiny.en"
 ])
 skel_path = f"/tmp/skel_{reel_idx}.json"
 subprocess.check_call([
