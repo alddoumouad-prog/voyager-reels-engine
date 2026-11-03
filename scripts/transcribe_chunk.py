@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-import json, os, subprocess, sys
+import json, subprocess, sys
+import numpy as np
 from faster_whisper import WhisperModel
 
 chunk_idx = int(sys.argv[1])
@@ -7,7 +8,6 @@ total_chunks = int(sys.argv[2])
 audio_path = sys.argv[3]
 out_json = sys.argv[4]
 
-# Get exact audio duration
 probe = subprocess.check_output([
     "ffprobe", "-v", "error", "-show_entries", "format=duration",
     "-of", "default=noprint_wrappers=1:nokey=1", audio_path
@@ -19,15 +19,17 @@ start_sec = max(0.0, chunk_idx * step - (3.0 if chunk_idx > 0 else 0.0))
 end_sec = min(total_dur, (chunk_idx + 1) * step + (3.0 if chunk_idx + 1 < total_chunks else 0.0))
 dur_sec = end_sec - start_sec
 
-wav_path = f"/tmp/chunk_{chunk_idx}.wav"
+pcm_path = f"/tmp/chunk_{chunk_idx}.pcm"
 subprocess.check_call([
     "ffmpeg", "-y", "-ss", f"{start_sec:.3f}", "-t", f"{dur_sec:.3f}",
-    "-i", audio_path, "-ar", "16000", "-ac", "1", wav_path, "-loglevel", "error"
+    "-i", audio_path, "-f", "s16le", "-acodec", "pcm_s16le", "-ar", "16000", "-ac", "1",
+    pcm_path, "-loglevel", "error"
 ])
+audio_np = np.fromfile(pcm_path, dtype=np.int16).astype(np.float32) / 32768.0
 
 model = WhisperModel("deepdml/faster-whisper-large-v3-turbo-ct2", device="cpu", compute_type="int8", cpu_threads=4)
 segments_gen, info = model.transcribe(
-    wav_path,
+    audio_np,
     language="ar",
     task="transcribe",
     beam_size=5,
@@ -43,8 +45,6 @@ keep_until = (chunk_idx + 1) * step if (chunk_idx + 1 < total_chunks) else (tota
 words = []
 segs = []
 for s in segments_gen:
-    s_start = round(start_sec + s.start, 3)
-    s_end = round(start_sec + s.end, 3)
     s_words = []
     for w in (s.words or []):
         ws = round(start_sec + w.start, 3)
