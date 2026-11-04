@@ -6,11 +6,11 @@ on:
       mode:
         description: "Pipeline mode (transcribe or render)"
         required: true
-        default: "transcribe"
+        default: "render"
       release_tag:
         description: "GitHub Release tag holding media/spec"
         required: true
-        default: "job-eMXvYXuCOPk"
+        default: "job-9g31RIKTC6g"
 
 permissions:
   contents: write
@@ -35,8 +35,9 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download "${{ inputs.release_tag }}" -p "full_audio.m4a" -D /tmp
-          python3 scripts/transcribe_chunk.py "${{ matrix.chunk }}" 6 /tmp/full_audio.m4a "/tmp/chunk_${{ matrix.chunk }}.json"
+          gh release download "${{ inputs.release_tag }}" -p "full_audio.*" -D /tmp
+          AUDIO_FILE=$(ls /tmp/full_audio.* | head -n 1)
+          python3 scripts/transcribe_chunk.py "${{ matrix.chunk }}" 6 "$AUDIO_FILE" "/tmp/chunk_${{ matrix.chunk }}.json"
 
       - uses: actions/upload-artifact@v4
         with:
@@ -80,7 +81,7 @@ jobs:
           path: ~/.local/share/voyager
           key: voyager-engines-v2026.11.2.3-v1
 
-      - name: Install Arabic Fonts, FFmpeg & Voyager Native Engines
+      - name: Install Arabic Fonts, FFmpeg, Vulkan & Voyager Native Engines
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg mesa-vulkan-drivers libvulkan1 fonts-noto-core fonts-noto-extra fonts-noto-ui-core fonts-noto-color-emoji fonts-dejavu-core fontconfig
@@ -103,6 +104,8 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          gh release download "${{ inputs.release_tag }}" -p "full_video_only.mp4" -p "full_audio.m4a" -p "reels_spec.json" -D /tmp
-          python3 scripts/render_reel.py "${{ matrix.reel_idx }}" /tmp/reels_spec.json /tmp/full_video_only.mp4 /tmp/full_audio.m4a /tmp/out
+          gh release download "${{ inputs.release_tag }}" -p "full_video*" -p "full_audio*" -p "reels_spec.json" -D /tmp
+          VIDEO_FILE=$(ls /tmp/full_video* | head -n 1)
+          AUDIO_FILE=$(ls /tmp/full_audio* | head -n 1)
+          python3 scripts/render_reel.py "${{ matrix.reel_idx }}" /tmp/reels_spec.json "$VIDEO_FILE" "$AUDIO_FILE" /tmp/out
           gh release upload "${{ inputs.release_tag }}" /tmp/out/* --clobber
