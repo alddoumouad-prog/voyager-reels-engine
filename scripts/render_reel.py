@@ -9,6 +9,9 @@ out_dir = sys.argv[5]
 os.makedirs(out_dir, exist_ok=True)
 
 spec = json.load(open(spec_json, encoding="utf-8"))
+if reel_idx >= len(spec["reels"]):
+    print(f"Reel index {reel_idx} not in spec ({len(spec['reels'])} reels); skipping cleanly.")
+    sys.exit(0)
 reel = spec["reels"][reel_idx]
 slug = reel["slug"]
 cuts = reel["cuts"]

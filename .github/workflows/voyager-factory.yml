@@ -108,4 +108,4 @@ jobs:
           VIDEO_FILE=$(ls /tmp/full_video* | head -n 1)
           AUDIO_FILE=$(ls /tmp/full_audio* | head -n 1)
           python3 scripts/render_reel.py "${{ matrix.reel_idx }}" /tmp/reels_spec.json "$VIDEO_FILE" "$AUDIO_FILE" /tmp/out
-          gh release upload "${{ inputs.release_tag }}" /tmp/out/* --clobber
+          shopt -s nullglob; files=(/tmp/out/*); if [ ${#files[@]} -gt 0 ]; then gh release upload "${{ inputs.release_tag }}" "${files[@]}" --clobber; fi
